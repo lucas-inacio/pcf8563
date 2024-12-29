@@ -51,11 +51,13 @@ pcf8563_err_t pcf8563_init(const pcf8563_t *pcf)
     uint8_t clear = 0x00;
     int32_t status;
 
-    status = pcf->write(pcf->handle, PCF8563_ADDRESS, PCF8563_CONTROL_STATUS1, &clear, 1);
+    uint8_t data[] = { PCF8563_CONTROL_STATUS1, clear };
+    status = pcf->write(pcf->handle, data, 2);
     if (PCF8563_OK != status) {
         return status;
     }
-    return pcf->write(pcf->handle, PCF8563_ADDRESS, PCF8563_CONTROL_STATUS2, &clear, 1);
+    data[0] = PCF8563_CONTROL_STATUS2;
+    return pcf->write(pcf->handle, data, 2);
 }
 
 pcf8563_err_t pcf8563_read(const pcf8563_t *pcf, struct tm *time)
@@ -66,7 +68,7 @@ pcf8563_err_t pcf8563_read(const pcf8563_t *pcf, struct tm *time)
     int32_t status;
 
     status = pcf->read(
-        pcf->handle, PCF8563_ADDRESS, PCF8563_SECONDS, data, PCF8563_TIME_SIZE
+        pcf->handle, PCF8563_SECONDS, data, PCF8563_TIME_SIZE
     );
 
     if (PCF8563_OK != status) {
@@ -118,48 +120,52 @@ pcf8563_err_t pcf8563_read(const pcf8563_t *pcf, struct tm *time)
 pcf8563_err_t pcf8563_write(const pcf8563_t *pcf, const struct tm *time)
 {
     uint8_t bcd;
-    uint8_t data[PCF8563_TIME_SIZE] = {0};
+    uint8_t data[PCF8563_TIME_SIZE+1] = {0};
+
+    /* Target register */
+    data[0] = PCF8563_SECONDS;
 
     /* 0..59 */
     bcd = decimal2bcd(time->tm_sec);
-    data[0] = bcd & 0b01111111;
+    data[1] = bcd & 0b01111111;
 
     /* 0..59 */
     bcd = decimal2bcd(time->tm_min);
-    data[1] = bcd & 0b01111111;
+    data[2] = bcd & 0b01111111;
 
     /* 0..23 */
     bcd = decimal2bcd(time->tm_hour);
-    data[2] = bcd & 0b00111111;
+    data[3] = bcd & 0b00111111;
 
     /* 1..31 */
     bcd = decimal2bcd(time->tm_mday);
-    data[3] = bcd & 0b00111111;
+    data[4] = bcd & 0b00111111;
 
     /* 0..6 */
     bcd = decimal2bcd(time->tm_wday);
-    data[4] = bcd & 0b00000111;
+    data[5] = bcd & 0b00000111;
 
     /* 1..12 */
     bcd = decimal2bcd(time->tm_mon + 1);
-    data[5] = bcd & 0b00011111;
+    data[6] = bcd & 0b00011111;
 
     /* If 2000 set the century bit. */
     if (time->tm_year >= 100) {
-        data[5] |= PCF8563_CENTURY_BIT;
+        data[6] |= PCF8563_CENTURY_BIT;
     }
 
     /* 0..99 */
     bcd = decimal2bcd(time->tm_year % 100);
-    data[6] = bcd & 0b11111111;
+    data[7] = bcd & 0b11111111;
 
-    return pcf->write(pcf->handle, PCF8563_ADDRESS, PCF8563_SECONDS, data, PCF8563_TIME_SIZE);
+    return pcf->write(pcf->handle, data, PCF8563_TIME_SIZE+1);
 }
 
 pcf8563_err_t pcf8563_ioctl(const pcf8563_t *pcf, int16_t command, void *buffer)
 {
     uint8_t reg = command >> 8;
-    uint8_t data[PCF8563_ALARM_SIZE] = {0};
+    uint8_t data[PCF8563_ALARM_SIZE+1] = {0};
+    data[0] = reg;
     uint8_t status;
     struct tm *time;
 
@@ -169,37 +175,37 @@ pcf8563_err_t pcf8563_ioctl(const pcf8563_t *pcf, int16_t command, void *buffer)
 
         /* 0..59 */
         if (PCF8563_ALARM_NONE == time->tm_min) {
-            data[0] = PCF8563_ALARM_DISABLE;
+            data[1] = PCF8563_ALARM_DISABLE;
         } else {
-            data[0] = decimal2bcd(time->tm_min);
+            data[1] = decimal2bcd(time->tm_min);
         }
 
         /* 0..23 */
         if (PCF8563_ALARM_NONE == time->tm_hour) {
-            data[1] = PCF8563_ALARM_DISABLE;
+            data[2] = PCF8563_ALARM_DISABLE;
         } else {
-            data[1] = decimal2bcd(time->tm_hour);
-            data[1] &= 0b00111111;
+            data[2] = decimal2bcd(time->tm_hour);
+            data[2] &= 0b00111111;
         }
 
         /* 1..31 */
         if (PCF8563_ALARM_NONE == time->tm_mday) {
-            data[2] = PCF8563_ALARM_DISABLE;
+            data[3] = PCF8563_ALARM_DISABLE;
         } else {
-            data[2] = decimal2bcd(time->tm_mday);
+            data[3] = decimal2bcd(time->tm_mday);
             data[2] &= 0b00111111;
         }
 
         /* 0..6 */
         if (PCF8563_ALARM_NONE == time->tm_mday) {
-            data[3] = PCF8563_ALARM_DISABLE;
+            data[4] = PCF8563_ALARM_DISABLE;
         } else {
-            data[3] = decimal2bcd(time->tm_wday);
-            data[3] &= 0b00000111;
+            data[4] = decimal2bcd(time->tm_wday);
+            data[4] &= 0b00000111;
         }
 
         return pcf->write(
-            pcf->handle, PCF8563_ADDRESS, reg, data, PCF8563_ALARM_SIZE
+            pcf->handle, data, PCF8563_ALARM_SIZE+1
         );
 
         break;
@@ -209,42 +215,42 @@ pcf8563_err_t pcf8563_ioctl(const pcf8563_t *pcf, int16_t command, void *buffer)
 
         /* 0..59 */
         status = pcf->read(
-            pcf->handle, PCF8563_ADDRESS, reg, data, PCF8563_ALARM_SIZE
+            pcf->handle, reg, &data[1], PCF8563_ALARM_SIZE
         );
 
         if (PCF8563_OK != status) {
             return status;
         }
 
-        if (PCF8563_ALARM_DISABLE & data[0]) {
+        if (PCF8563_ALARM_DISABLE & data[1]) {
             time->tm_min = PCF8563_ALARM_NONE;
         } else {
-            data[0] &= 0b01111111;
-            time->tm_min = bcd2decimal(data[0]);
+            data[1] &= 0b01111111;
+            time->tm_min = bcd2decimal(data[1]);
         }
 
         /* 0..23 */
-        if (PCF8563_ALARM_DISABLE & data[1]) {
+        if (PCF8563_ALARM_DISABLE & data[2]) {
             time->tm_hour = PCF8563_ALARM_NONE;
         } else {
-            data[1] &= 0b00111111;
-            time->tm_hour = bcd2decimal(data[1]);
+            data[2] &= 0b00111111;
+            time->tm_hour = bcd2decimal(data[2]);
         }
 
         /* 1..31 */
-        if (PCF8563_ALARM_DISABLE & data[2]) {
+        if (PCF8563_ALARM_DISABLE & data[3]) {
             time->tm_mday = PCF8563_ALARM_NONE;
         } else {
-            data[2] &= 0b00111111;
-            time->tm_mday = bcd2decimal(data[2]);
+            data[3] &= 0b00111111;
+            time->tm_mday = bcd2decimal(data[3]);
         }
 
         /* 0..6 */
-        if (PCF8563_ALARM_DISABLE & data[3]) {
+        if (PCF8563_ALARM_DISABLE & data[4]) {
             time->tm_wday = PCF8563_ALARM_NONE;
         } else {
-            data[3] &= 0b00000111;
-            time->tm_wday = bcd2decimal(data[3]);
+            data[4] &= 0b00000111;
+            time->tm_wday = bcd2decimal(data[4]);
         }
 
         return PCF8563_OK;
@@ -255,7 +261,7 @@ pcf8563_err_t pcf8563_ioctl(const pcf8563_t *pcf, int16_t command, void *buffer)
     case PCF8563_TIMER_CONTROL_READ:
     case PCF8563_TIMER_READ:
         return pcf->read(
-            pcf->handle, PCF8563_ADDRESS, reg, (uint8_t *)buffer, 1
+            pcf->handle, reg, (uint8_t *)buffer, 1
         );
         break;
 
@@ -263,11 +269,13 @@ pcf8563_err_t pcf8563_ioctl(const pcf8563_t *pcf, int16_t command, void *buffer)
     case PCF8563_CONTROL_STATUS2_WRITE:
     case PCF8563_TIMER_CONTROL_WRITE:
     case PCF8563_TIMER_WRITE:
-        return pcf->write(
-            pcf->handle, PCF8563_ADDRESS, reg, (uint8_t *)buffer, 1
-        );
+        {
+            uint8_t buf[2] = {reg, *(uint8_t *)buffer};
+            return pcf->write(
+                pcf->handle, buf, 2
+            );
+        }
         break;
-
     }
 
     return PCF8563_ERROR_NOTTY;
